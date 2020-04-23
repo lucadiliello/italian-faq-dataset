@@ -2,9 +2,6 @@ import os
 import argparse
 import csv
 import random
-import shutil
-import itertools
-from tabulate import tabulate
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Split trenitalia dataset and prepare it for training')
@@ -16,8 +13,8 @@ if __name__ == "__main__":
                         help="Force overwrite of output folder")
     parser.add_argument("-r", "--ratio", required=False, type=float, default=1.0,
                         help="Ration between positive and negative couples")
-    parser.add_argument("--keep_inverted", action="store_true",
-                        help="Use also tuples inverted: [a, b] -> [b, a]")
+    parser.add_argument("-n", "--n_negative", required=True, type=int,
+                        help="Number of negative for each positive")
 
     args = parser.parse_args()
 
@@ -26,7 +23,7 @@ if __name__ == "__main__":
     output_file = args.output_file
     force = args.force
     ratio = args.ratio
-    keep_inverted = args.keep_inverted
+    n_negative = args.n_negative
     random.seed(999)
 
     # checks...
@@ -43,38 +40,27 @@ if __name__ == "__main__":
         with open(input_file) as csv_file:
             csv_reader = csv.reader(csv_file, delimiter='\t')
             for row in csv_reader:
-                row = [x.strip() for x in row]
+                row = [x.strip() for x in row if x.strip()]
                 clusters.append(row)
 
-    positives = []
-    for cluster in clusters:
+    all_data = []
+    _id = 0
+    choices = list(range(len(clusters)))
+    for c, cluster in enumerate(clusters):
         # with only 1 question we cannot create neither a single positive tuple
         if len(cluster) > 1:
-            for i, q1 in enumerate(cluster[:-1]):
-                for j, q2 in enumerate(cluster[i + 1:]):
-                    positives.append([q1, q2, True])
-                    if keep_inverted:
-                        positives.append([q2, q1, True])
-    
-    all_negatives = []
-    for i, cluster1 in enumerate(clusters[:-1]):
-        for j, cluster2 in enumerate(clusters[i + 1:]):
-            for q1 in cluster1:
-                for q2 in cluster2:
-                    all_negatives.append([q1, q2, False])
-                    if keep_inverted:
-                        all_negatives.append([q2, q1, False])
+            for i, q1 in enumerate(cluster):
+                for j, q2 in enumerate(cluster):
+                    if i != j:
+                        all_data.append([_id, q1, q2, True])
+                        for i in range(n_negative):
+                            choices.remove(c)
+                            res = random.choice(choices)
+                            choices.append(c)
+                            elem = random.choice(clusters[res])
+                            all_data.append([_id, q1, elem, False])
+                        _id += 1
 
-    # shuffle 
-    negatives_number = int(len(positives) * ratio)
-
-    random.shuffle(all_negatives)
-    negatives = all_negatives[:negatives_number]
-
-    all_data = positives + negatives
-
-    # shuffle again in case they will be used for training...
-    random.shuffle(all_data)
 
     with open(output_file, mode='w') as f:
         writer = csv.writer(f, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
